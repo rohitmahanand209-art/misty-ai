@@ -16,7 +16,7 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  allowedDevOrigins: ['*'],
+  allowedDevOrigins: ['*', '*.e2b.app', '*.e2b.dev', '*.ideavo.app', '*.ideavo.dev'],
   typescript: {
     ignoreBuildErrors: true,
   },
