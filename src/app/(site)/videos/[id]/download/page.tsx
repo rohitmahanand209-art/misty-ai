@@ -18,6 +18,11 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { VideoThumb } from "@/components/video-thumb";
 import { getVideo } from "@/lib/demo-store";
+import {
+  formatBytes,
+  getVideoBlob,
+  videoExtension,
+} from "@/lib/video-blobs";
 import { MODE_LABELS, type DemoVideo } from "@/lib/demo-data";
 import { cn } from "@/lib/utils";
 
@@ -61,9 +66,15 @@ export default function DownloadPage() {
   const [ready, setReady] = useState(false);
   const [quality, setQuality] = useState("1080p");
   const [copied, setCopied] = useState(false);
+  const [clip, setClip] = useState<{
+    url: string;
+    mime: string;
+    size: number;
+  } | null>(null);
 
   useEffect(() => {
     setVideo(getVideo(params.id) ?? null);
+    setClip(getVideoBlob(params.id) ?? null);
     setReady(true);
   }, [params.id]);
 
@@ -121,7 +132,13 @@ export default function DownloadPage() {
 
     ctx.fillStyle = "rgba(255,255,255,0.75)";
     ctx.font = `600 ${Math.round(width * 0.018)}px system-ui, sans-serif`;
-    ctx.fillText("MISTY AI · DEMO PREVIEW", width * 0.06, height * 0.1);
+    ctx.fillText(
+      activeVideo.source === "procedural"
+        ? "MISTY AI · PROCEDURAL RENDER"
+        : "MISTY AI · DEMO PREVIEW",
+      width * 0.06,
+      height * 0.1,
+    );
 
     ctx.fillStyle = "#ffffff";
     ctx.font = `700 ${Math.round(width * 0.055)}px system-ui, sans-serif`;
@@ -239,7 +256,7 @@ export default function DownloadPage() {
       <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_1.1fr]">
         <div>
           <div className="ring-gradient overflow-hidden rounded-3xl bg-black/40 p-2.5">
-            <VideoThumb video={activeVideo} interactive={false} />
+            <VideoThumb video={activeVideo} interactive={false} controls />
           </div>
           <div className="mt-3 rounded-2xl border border-white/8 bg-white/[0.03] p-3.5">
             <p className="text-[11px] uppercase tracking-wider text-white/35">
@@ -357,26 +374,47 @@ export default function DownloadPage() {
                 <Download className="size-4 text-white/50" />
               </button>
 
-              <button
-                type="button"
-                disabled
-                className="flex w-full cursor-not-allowed items-center gap-3 rounded-xl border border-white/5 bg-white/[0.01] p-3 text-left opacity-60"
-              >
-                <span className="grid size-9 shrink-0 place-items-center rounded-lg border border-white/10 bg-white/5 text-white/50">
-                  <Lock className="size-4" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-xs font-medium text-white/80">
-                    Video file (MP4)
+              {clip ? (
+                <a
+                  href={clip.url}
+                  download={`misty-${activeVideo.id}.${videoExtension(clip.mime)}`}
+                  className="flex w-full items-center gap-3 rounded-xl border border-emerald-400/25 bg-emerald-400/[0.06] p-3 text-left transition hover:border-emerald-400/40 hover:bg-emerald-400/10"
+                >
+                  <span className="grid size-9 shrink-0 place-items-center rounded-lg border border-emerald-400/25 bg-emerald-400/10 text-emerald-200">
+                    <Download className="size-4" />
                   </span>
-                  <span className="block text-[10px] text-white/40">
-                    Available when the AI render engine launches
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-xs font-medium text-white">
+                      Download video ({videoExtension(clip.mime).toUpperCase()})
+                    </span>
+                    <span className="block text-[10px] text-white/45">
+                      {formatBytes(clip.size)} · rendered in this browser
+                    </span>
                   </span>
-                </span>
-                <span className="rounded-full bg-white/10 px-2 py-0.5 text-[9px] uppercase tracking-wide text-white/50">
-                  Soon
-                </span>
-              </button>
+                  <Download className="size-4 text-emerald-200/80" />
+                </a>
+              ) : (
+                <button
+                  type="button"
+                  disabled
+                  className="flex w-full cursor-not-allowed items-center gap-3 rounded-xl border border-white/5 bg-white/[0.01] p-3 text-left opacity-60"
+                >
+                  <span className="grid size-9 shrink-0 place-items-center rounded-lg border border-white/10 bg-white/5 text-white/50">
+                    <Lock className="size-4" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-xs font-medium text-white/80">
+                      Video file (MP4)
+                    </span>
+                    <span className="block text-[10px] text-white/40">
+                      Available after a live render in this browser
+                    </span>
+                  </span>
+                  <span className="rounded-full bg-white/10 px-2 py-0.5 text-[9px] uppercase tracking-wide text-white/50">
+                    Soon
+                  </span>
+                </button>
+              )}
             </div>
 
             <div className="mt-3 flex gap-2">

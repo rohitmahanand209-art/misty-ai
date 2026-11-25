@@ -292,7 +292,7 @@ export function ImageStudio() {
                 Aspect
               </label>
               <div className="flex gap-1.5">
-                {(["16:9", "9:16", "1:1"] as const).map((item) => (
+                {(["16:9", "9:16"] as const).map((item) => (
                   <button
                     key={item}
                     type="button"

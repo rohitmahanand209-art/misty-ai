@@ -82,6 +82,8 @@ export function createDemoVideo(input: {
   voice: string;
   title?: string;
   gradient: string;
+  source?: DemoVideo["source"];
+  sizeLabel?: string;
 }): DemoVideo {
   const title =
     input.title?.trim() ||
@@ -106,7 +108,8 @@ export function createDemoVideo(input: {
     createdAt: new Date().toISOString(),
     gradient: input.gradient,
     resolution,
-    sizeLabel: `${(input.duration * 1.35 + 2.4).toFixed(1)} MB`,
+    sizeLabel: input.sizeLabel ?? `${(input.duration * 1.35 + 2.4).toFixed(1)} MB`,
+    source: input.source ?? "demo",
   };
   return addVideo(video);
 }

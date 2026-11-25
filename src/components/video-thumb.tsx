@@ -1,6 +1,10 @@
+"use client";
+
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { Film, Play } from "lucide-react";
 import type { DemoVideo } from "@/lib/demo-data";
+import { getVideoBlob } from "@/lib/video-blobs";
 import { cn } from "@/lib/utils";
 
 const ASPECT_CLASS: Record<DemoVideo["aspect"], string> = {
@@ -9,24 +13,34 @@ const ASPECT_CLASS: Record<DemoVideo["aspect"], string> = {
   "1:1": "aspect-square",
 };
 
+type ThumbVideo = Pick<DemoVideo, "title" | "aspect" | "duration" | "gradient"> &
+  Partial<Pick<DemoVideo, "id" | "source">>;
+
 export function VideoThumb({
   video,
   className,
   aspect,
   gradient,
   interactive = true,
+  controls = false,
 }: {
-  video?: Pick<DemoVideo, "title" | "aspect" | "duration" | "gradient">;
+  video?: ThumbVideo;
   className?: string;
   aspect?: DemoVideo["aspect"];
   gradient?: string;
   interactive?: boolean;
+  controls?: boolean;
 }) {
   const resolvedAspect = aspect ?? video?.aspect ?? "16:9";
   const background =
     gradient ??
     video?.gradient ??
     "linear-gradient(135deg,#7c3aed 0%,#4f46e5 50%,#0ea5e9 100%)";
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    setVideoUrl(getVideoBlob(video?.id)?.url ?? null);
+  }, [video?.id]);
 
   return (
     <div
@@ -35,23 +49,42 @@ export function VideoThumb({
         ASPECT_CLASS[resolvedAspect],
         className,
       )}
-      style={{ backgroundImage: background }}
+      style={{ backgroundImage: videoUrl ? undefined : background }}
     >
-      <div className="absolute inset-0 opacity-40 [background-image:linear-gradient(to_right,rgba(255,255,255,.18)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,.18)_1px,transparent_1px)] [background-size:28px_28px]" />
-      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
-      <div className="absolute inset-0 grid place-items-center">
-        <span
-          className={cn(
-            "grid size-12 place-items-center rounded-full border border-white/30 bg-white/15 backdrop-blur-sm transition",
-            interactive && "group-hover:scale-110 group-hover:bg-white/25",
-          )}
-        >
-          <Play className="ml-0.5 size-5 fill-white text-white" />
-        </span>
-      </div>
+      {videoUrl ? (
+        <video
+          src={videoUrl}
+          muted
+          playsInline
+          loop
+          autoPlay={!controls}
+          controls={controls}
+          preload="metadata"
+          className="absolute inset-0 size-full object-cover"
+        />
+      ) : (
+        <>
+          <div className="absolute inset-0 opacity-40 [background-image:linear-gradient(to_right,rgba(255,255,255,.18)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,.18)_1px,transparent_1px)] [background-size:28px_28px]" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
+          <div className="absolute inset-0 grid place-items-center">
+            <span
+              className={cn(
+                "grid size-12 place-items-center rounded-full border border-white/30 bg-white/15 backdrop-blur-sm transition",
+                interactive && "group-hover:scale-110 group-hover:bg-white/25",
+              )}
+            >
+              <Play className="ml-0.5 size-5 fill-white text-white" />
+            </span>
+          </div>
+        </>
+      )}
       <div className="absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-black/35 px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-white/85 backdrop-blur-sm">
         <Film className="size-3" />
-        Demo preview
+        {video?.source === "procedural"
+          ? videoUrl
+            ? "Procedural render"
+            : "Render expired"
+          : "Demo preview"}
       </div>
       <div className="absolute bottom-3 right-3 rounded-md bg-black/50 px-1.5 py-0.5 text-[11px] font-medium text-white/90">
         0:{(video?.duration ?? 8).toString().padStart(2, "0")}

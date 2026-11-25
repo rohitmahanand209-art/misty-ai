@@ -149,9 +149,12 @@ export default function VideoDetailPage() {
               video={video}
               className="rounded-2xl"
               interactive={false}
+              controls
             />
             <div className="pointer-events-none absolute left-5 top-5 rounded-full border border-white/15 bg-black/40 px-2.5 py-1 text-[10px] font-medium uppercase tracking-wider text-white/80 backdrop-blur">
-              Simulated preview
+              {video.source === "procedural"
+                ? "Procedural render"
+                : "Simulated preview"}
             </div>
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">

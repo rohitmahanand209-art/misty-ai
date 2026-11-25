@@ -25,6 +25,7 @@ export type DemoVideo = {
   gradient: string;
   resolution: string;
   sizeLabel: string;
+  source?: "demo" | "procedural";
 };
 
 export const MODE_LABELS: Record<VideoMode, string> = {

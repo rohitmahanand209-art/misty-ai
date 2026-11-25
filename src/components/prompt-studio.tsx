@@ -24,6 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useDemoGeneration } from "@/hooks/use-demo-generation";
+import { useAuth } from "@/components/providers/auth-provider";
 import {
   PROMPT_IDEAS,
   STYLES,
@@ -37,7 +38,6 @@ import { cn } from "@/lib/utils";
 const ASPECTS: { value: DemoVideo["aspect"]; label: string; hint: string }[] = [
   { value: "16:9", label: "16:9", hint: "YouTube" },
   { value: "9:16", label: "9:16", hint: "Reels" },
-  { value: "1:1", label: "1:1", hint: "Square" },
 ];
 
 const DURATIONS = [5, 8, 10, 15];
@@ -68,8 +68,12 @@ export function PromptStudio({
   const [aspect, setAspect] = useState<DemoVideo["aspect"]>("16:9");
   const [duration, setDuration] = useState(8);
   const [voice, setVoice] = useState("en-female");
-  const { status, progress, stepLabel, steps, result, start, reset } =
-    useDemoGeneration();
+  const { user } = useAuth();
+  const canLive = user?.role === "admin";
+  const [liveMode, setLiveMode] = useState(false);
+  const provider = canLive && liveMode ? "procedural" : "demo";
+  const { status, progress, stepLabel, steps, result, error, start, reset } =
+    useDemoGeneration(provider);
 
   const working = status === "working";
   const done = status === "done" && result;
@@ -117,10 +121,46 @@ export function PromptStudio({
             </p>
           )}
         </div>
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/25 bg-amber-400/10 px-2.5 py-1 text-[11px] font-medium text-amber-200/90">
-          <span className="size-1.5 rounded-full bg-amber-300" />
-          Demo mode
-        </span>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {canLive && (
+            <button
+              type="button"
+              onClick={() => setLiveMode((value) => !value)}
+              disabled={working}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-60",
+                liveMode
+                  ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-200"
+                  : "border-white/15 bg-white/5 text-white/55 hover:text-white",
+              )}
+              title="Admin only: render a real video file locally in your browser"
+            >
+              <span
+                className={cn(
+                  "size-1.5 rounded-full",
+                  liveMode ? "bg-emerald-300" : "bg-white/30",
+                )}
+              />
+              Live render {liveMode ? "on" : "off"}
+            </button>
+          )}
+          <span
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium",
+              provider === "procedural"
+                ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-200/90"
+                : "border-amber-400/25 bg-amber-400/10 text-amber-200/90",
+            )}
+          >
+            <span
+              className={cn(
+                "size-1.5 rounded-full",
+                provider === "procedural" ? "bg-emerald-300" : "bg-amber-300",
+              )}
+            />
+            {provider === "procedural" ? "Procedural render" : "Demo mode"}
+          </span>
+        </div>
       </div>
 
       <div className="relative mt-4">
@@ -268,8 +308,9 @@ export function PromptStudio({
       </Button>
 
       <p className="mt-2.5 text-center text-[11px] leading-relaxed text-white/35">
-        Demo interface only — no real AI render or paid API is called. Your
-        settings are saved locally for preview.
+        {provider === "procedural"
+          ? "Rendered locally in your browser with canvas + MediaRecorder — no AI model, no API, no cost. The file is ephemeral and stays on this device."
+          : "Demo interface only — no real AI render or paid API is called. Your settings are saved locally for preview."}
       </p>
 
       {working && (
@@ -297,6 +338,12 @@ export function PromptStudio({
         </div>
       )}
 
+      {error && (
+        <p className="mt-3 rounded-xl border border-red-400/30 bg-red-400/10 p-3 text-[11px] leading-relaxed text-red-200">
+          {error}
+        </p>
+      )}
+
       {done && (
         <div className="mt-4 animate-fade-up rounded-2xl border border-emerald-400/25 bg-emerald-400/[0.06] p-3 sm:p-4">
           <div className="flex flex-col gap-4 sm:flex-row">
@@ -305,7 +352,10 @@ export function PromptStudio({
             </div>
             <div className="min-w-0 flex-1">
               <p className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-emerald-300">
-                <Check className="size-3.5" /> Demo clip ready
+                <Check className="size-3.5" />{" "}
+                {provider === "procedural"
+                  ? "Procedural clip ready"
+                  : "Demo clip ready"}
               </p>
               <h3 className="mt-1 truncate text-sm font-semibold text-white">
                 {result.title}
