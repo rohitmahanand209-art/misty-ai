@@ -27,6 +27,7 @@ import {
   subscribeStore,
 } from "@/lib/demo-store";
 import { MODE_LABELS, type DemoVideo } from "@/lib/demo-data";
+import { detectCharacterAction } from "@/lib/motion-intent";
 
 const MODE_ROUTES: Record<DemoVideo["mode"], string> = {
   text: "/text-to-video",
@@ -164,6 +165,16 @@ export default function VideoDetailPage() {
               created by Misty AI in your browser (camera dolly, parallax,
               drifting particles). No AI video model animated the subject, so
               it does not perform actions from the prompt.
+              {detectCharacterAction(video.prompt) && (
+                <>
+                  {" "}
+                  Your prompt asks the subject to{" "}
+                  <span className="font-medium text-amber-200">
+                    {detectCharacterAction(video.prompt)}
+                  </span>
+                  ; its legs, body and head stay still.
+                </>
+              )}
             </p>
           )}
           <div className="mt-3 flex flex-wrap items-center gap-2">
