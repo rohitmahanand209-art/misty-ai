@@ -153,7 +153,7 @@ export default function VideoDetailPage() {
             />
             <div className="pointer-events-none absolute left-5 top-5 rounded-full border border-white/15 bg-black/40 px-2.5 py-1 text-[10px] font-medium uppercase tracking-wider text-white/80 backdrop-blur">
               {video.source === "procedural"
-                ? "Procedural render"
+                ? "AI scene render"
                 : "Simulated preview"}
             </div>
           </div>

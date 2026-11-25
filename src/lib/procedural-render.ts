@@ -7,6 +7,7 @@ export type ProceduralRenderInput = {
   aspect: ProceduralAspect;
   duration: number;
   style: string;
+  image?: Blob | null;
   onProgress?: (percent: number) => void;
   signal?: AbortSignal;
 };
@@ -17,6 +18,139 @@ const MIME_CANDIDATES = [
   "video/webm",
   "video/mp4",
 ];
+
+function readVint(
+  bytes: Uint8Array,
+  pos: number,
+): { length: number; value: number; unknown: boolean } | null {
+  const first = bytes[pos];
+  if (first === undefined || first === 0) return null;
+  let length = 1;
+  for (let mask = 0x80; mask > 0 && (first & mask) === 0; mask >>= 1) length += 1;
+  if (length > 8 || pos + length > bytes.length) return null;
+  let value = first & (0xff >> length);
+  let allOnes = value === (0xff >> length);
+  for (let i = 1; i < length; i += 1) {
+    const byte = bytes[pos + i];
+    value = value * 256 + byte;
+    if (byte !== 0xff) allOnes = false;
+  }
+  return { length, value, unknown: allOnes };
+}
+
+function encodeVintSize(value: number, minLength = 1): Uint8Array {
+  let length = minLength;
+  while (length < 8 && value >= 2 ** (7 * length) - 1) length += 1;
+  const out = new Uint8Array(length);
+  let remaining = value;
+  for (let i = length - 1; i >= 0; i -= 1) {
+    out[i] = remaining % 256;
+    remaining = Math.floor(remaining / 256);
+  }
+  out[0] |= 1 << (8 - length);
+  return out;
+}
+
+const EBML_HEADER_ID = 0x1a45dfa3;
+const SEGMENT_ID = 0x18538067;
+const INFO_ID = 0x1549a966;
+const DURATION_ID = 0x4489;
+
+function readId(bytes: Uint8Array, pos: number): { id: number; length: number } | null {
+  const first = bytes[pos];
+  if (first === undefined || first === 0) return null;
+  let length = 1;
+  for (let mask = 0x80; mask > 0 && (first & mask) === 0; mask >>= 1) length += 1;
+  if (length > 4 || pos + length > bytes.length) return null;
+  let id = 0;
+  for (let i = 0; i < length; i += 1) id = id * 256 + bytes[pos + i];
+  return { id, length };
+}
+
+export async function applyWebmDuration(
+  blob: Blob,
+  durationMs: number,
+): Promise<Blob> {
+  try {
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+
+    const header = readId(bytes, 0);
+    if (!header || header.id !== EBML_HEADER_ID) return blob;
+    const headerSize = readVint(bytes, header.length);
+    if (!headerSize || headerSize.unknown) return blob;
+    let pos = header.length + headerSize.length + headerSize.value;
+
+    const segment = readId(bytes, pos);
+    if (!segment || segment.id !== SEGMENT_ID) return blob;
+    const segmentSize = readVint(bytes, pos + segment.length);
+    if (!segmentSize) return blob;
+    pos += segment.length + segmentSize.length;
+
+    const info = readId(bytes, pos);
+    if (!info || info.id !== INFO_ID) return blob;
+    const infoSize = readVint(bytes, pos + info.length);
+    if (!infoSize || infoSize.unknown) return blob;
+
+    const sizePos = pos + info.length;
+    const payloadStart = sizePos + infoSize.length;
+    const payloadEnd = payloadStart + infoSize.value;
+    if (payloadEnd > bytes.length) return blob;
+
+    let cursor = payloadStart;
+    while (cursor < payloadEnd) {
+      const element = readId(bytes, cursor);
+      if (!element) break;
+      const elementSize = readVint(bytes, cursor + element.length);
+      if (!elementSize || elementSize.unknown) break;
+      if (element.id === DURATION_ID) {
+        const valuePos = cursor + element.length + elementSize.length;
+        if (valuePos + elementSize.value <= payloadEnd && elementSize.value === 8) {
+          const patched = bytes.slice();
+          new DataView(patched.buffer).setFloat64(valuePos, durationMs, false);
+          return new Blob([patched], { type: blob.type });
+        }
+        return blob;
+      }
+      cursor = valuePosOf(element.length, elementSize.length, elementSize.value, cursor);
+    }
+
+    const duration = new Uint8Array(11);
+    duration[0] = 0x44;
+    duration[1] = 0x89;
+    duration[2] = 0x88;
+    new DataView(duration.buffer).setFloat64(3, durationMs, false);
+
+    const newPayloadSize = infoSize.value + duration.length;
+    const newSize = encodeVintSize(newPayloadSize, infoSize.length);
+
+    const out = new Uint8Array(
+      bytes.length + duration.length + (newSize.length - infoSize.length),
+    );
+    let offset = 0;
+    out.set(bytes.subarray(0, sizePos), offset);
+    offset += sizePos;
+    out.set(newSize, offset);
+    offset += newSize.length;
+    out.set(bytes.subarray(payloadStart, payloadEnd), offset);
+    offset += infoSize.value;
+    out.set(duration, offset);
+    offset += duration.length;
+    out.set(bytes.subarray(payloadEnd), offset);
+
+    return new Blob([out], { type: blob.type });
+  } catch {
+    return blob;
+  }
+}
+
+function valuePosOf(
+  idLength: number,
+  sizeLength: number,
+  valueLength: number,
+  start: number,
+): number {
+  return start + idLength + sizeLength + valueLength;
+}
 
 function hashString(value: string): number {
   let hash = 2166136261;
@@ -122,6 +256,93 @@ function drawScene(
   }
 }
 
+type SceneSource = CanvasImageSource & { width: number; height: number };
+
+async function loadSceneBitmap(blob: Blob): Promise<SceneSource | null> {
+  try {
+    if (typeof createImageBitmap === "function") {
+      return await createImageBitmap(blob);
+    }
+  } catch {
+    // fall through to <img> decoding
+  }
+  try {
+    const url = URL.createObjectURL(blob);
+    const image = new Image();
+    image.decoding = "sync";
+    await new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve();
+      image.onerror = () => reject(new Error("decode failed"));
+      image.src = url;
+    });
+    return image;
+  } catch {
+    return null;
+  }
+}
+
+function drawImageScene(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  elapsed: number,
+  duration: number,
+  image: SceneSource,
+  seed: number,
+) {
+  const t = Math.min(1, elapsed / Math.max(0.001, duration));
+  const eased = t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2;
+
+  ctx.fillStyle = "#05030c";
+  ctx.fillRect(0, 0, width, height);
+
+  const zoom = 1.06 + eased * 0.16;
+  const dirX = seed % 2 === 0 ? 1 : -1;
+  const dirY = seed % 3 === 0 ? -1 : 1;
+  const panX = (eased - 0.5) * width * 0.07 * dirX;
+  const panY = (eased - 0.5) * height * 0.06 * dirY;
+
+  const scale = Math.max(width / image.width, height / image.height) * zoom;
+  const drawW = image.width * scale;
+  const drawH = image.height * scale;
+  const dx = (width - drawW) / 2 + panX;
+  const dy = (height - drawH) / 2 + panY;
+
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(image, dx, dy, drawW, drawH);
+
+  ctx.save();
+  ctx.globalCompositeOperation = "overlay";
+  const sweepX = ((elapsed / Math.max(1, duration)) * 1.6 - 0.3) * width;
+  const light = ctx.createLinearGradient(sweepX - width * 0.4, 0, sweepX + width * 0.4, height);
+  light.addColorStop(0, "rgba(255,255,255,0)");
+  light.addColorStop(0.5, "rgba(255,255,255,0.14)");
+  light.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = light;
+  ctx.fillRect(0, 0, width, height);
+  ctx.restore();
+
+  const vignette = ctx.createRadialGradient(
+    width / 2,
+    height / 2,
+    Math.min(width, height) * 0.32,
+    width / 2,
+    height / 2,
+    Math.max(width, height) * 0.78,
+  );
+  vignette.addColorStop(0, "rgba(0,0,0,0)");
+  vignette.addColorStop(1, "rgba(0,0,0,0.55)");
+  ctx.fillStyle = vignette;
+  ctx.fillRect(0, 0, width, height);
+
+  const fade = Math.min(1, elapsed / 0.5, (duration - elapsed) / 0.5);
+  if (fade < 1) {
+    ctx.fillStyle = `rgba(0,0,0,${Math.max(0, 1 - Math.max(0, fade))})`;
+    ctx.fillRect(0, 0, width, height);
+  }
+}
+
 export async function renderProceduralVideo(
   input: ProceduralRenderInput,
 ): Promise<Blob | null> {
@@ -138,8 +359,8 @@ export async function renderProceduralVideo(
 
   const duration = Math.min(15, Math.max(3, Math.round(input.duration || 8)));
   const aspect: ProceduralAspect = input.aspect === "9:16" ? "9:16" : "16:9";
-  const width = aspect === "9:16" ? 360 : 640;
-  const height = aspect === "9:16" ? 640 : 360;
+  const width = aspect === "9:16" ? 540 : 960;
+  const height = aspect === "9:16" ? 960 : 540;
 
   const canvas = document.createElement("canvas");
   canvas.width = width;
@@ -148,12 +369,22 @@ export async function renderProceduralVideo(
   if (!ctx) throw new Error("Could not create a drawing surface.");
 
   const seed = hashString(`${input.prompt}|${input.style}|${aspect}`);
-  drawScene(ctx, width, height, 0, duration, seed);
+  const sceneImage = input.image ? await loadSceneBitmap(input.image) : null;
+
+  const drawFrame = (elapsed: number) => {
+    if (sceneImage) {
+      drawImageScene(ctx, width, height, elapsed, duration, sceneImage, seed);
+    } else {
+      drawScene(ctx, width, height, elapsed, duration, seed);
+    }
+  };
+
+  drawFrame(0);
 
   const stream = canvas.captureStream(30);
   const recorder = new MediaRecorder(stream, {
     mimeType,
-    videoBitsPerSecond: 2_200_000,
+    videoBitsPerSecond: 3_000_000,
   });
   const chunks: BlobPart[] = [];
 
@@ -180,7 +411,15 @@ export async function renderProceduralVideo(
         finish(null);
         return;
       }
-      finish(new Blob(chunks, { type: mimeType.split(";")[0] || "video/webm" }));
+      const type = mimeType.split(";")[0] || "video/webm";
+      const raw = new Blob(chunks, { type });
+      if (type === "video/webm") {
+        applyWebmDuration(raw, duration * 1000)
+          .then((fixed) => finish(fixed))
+          .catch(() => finish(raw));
+      } else {
+        finish(raw);
+      }
     };
 
     if (input.signal?.aborted) {
@@ -199,12 +438,12 @@ export async function renderProceduralVideo(
       }
       const elapsed = (performance.now() - start) / 1000;
       if (elapsed >= duration) {
-        drawScene(ctx, width, height, duration, duration, seed);
+        drawFrame(duration);
         input.onProgress?.(100);
         if (recorder.state !== "inactive") recorder.stop();
         return;
       }
-      drawScene(ctx, width, height, elapsed, duration, seed);
+      drawFrame(elapsed);
       input.onProgress?.(Math.min(99, Math.round((elapsed / duration) * 100)));
       frame = requestAnimationFrame(tick);
     };

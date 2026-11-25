@@ -20,6 +20,7 @@ import { VideoThumb } from "@/components/video-thumb";
 import { getVideo } from "@/lib/demo-store";
 import {
   formatBytes,
+  getSceneImage,
   getVideoBlob,
   videoExtension,
 } from "@/lib/video-blobs";
@@ -40,7 +41,7 @@ function wrapText(
   maxWidth: number,
   lineHeight: number,
   maxLines: number,
-) {
+): number {
   const words = text.split(/\s+/);
   let line = "";
   let lines = 0;
@@ -50,14 +51,16 @@ function wrapText(
       ctx.fillText(line, x, y + lines * lineHeight);
       line = words[i];
       lines += 1;
-      if (lines >= maxLines) return;
+      if (lines >= maxLines) return lines;
     } else {
       line = test;
     }
   }
   if (line && lines < maxLines) {
     ctx.fillText(line, x, y + lines * lineHeight);
+    lines += 1;
   }
+  return lines;
 }
 
 export default function DownloadPage() {
@@ -102,7 +105,7 @@ export default function DownloadPage() {
 
   const activeVideo = video;
 
-  function downloadPoster() {
+  async function downloadPoster() {
     const aspect = activeVideo.aspect;
     const width = aspect === "9:16" ? 720 : aspect === "1:1" ? 900 : 1280;
     const height = aspect === "9:16" ? 1280 : aspect === "1:1" ? 900 : 720;
@@ -115,17 +118,45 @@ export default function DownloadPage() {
       return;
     }
 
-    const colors = activeVideo.gradient.match(/#[0-9a-fA-F]{3,8}/g) ?? [
-      "#7c3aed",
-      "#4f46e5",
-      "#0ea5e9",
-    ];
-    const gradient = ctx.createLinearGradient(0, 0, width, height);
-    colors.forEach((color, index) => {
-      gradient.addColorStop(index / Math.max(1, colors.length - 1), color);
-    });
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, width, height);
+    const scene = getSceneImage(activeVideo.id);
+    let paintedScene = false;
+    if (scene) {
+      try {
+        const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+          const element = new Image();
+          element.onload = () => resolve(element);
+          element.onerror = () => reject(new Error("poster image failed"));
+          element.src = scene.url;
+        });
+        const scale = Math.max(width / image.width, height / image.height);
+        const drawW = image.width * scale;
+        const drawH = image.height * scale;
+        ctx.drawImage(
+          image,
+          (width - drawW) / 2,
+          (height - drawH) / 2,
+          drawW,
+          drawH,
+        );
+        paintedScene = true;
+      } catch {
+        paintedScene = false;
+      }
+    }
+
+    if (!paintedScene) {
+      const colors = activeVideo.gradient.match(/#[0-9a-fA-F]{3,8}/g) ?? [
+        "#7c3aed",
+        "#4f46e5",
+        "#0ea5e9",
+      ];
+      const gradient = ctx.createLinearGradient(0, 0, width, height);
+      colors.forEach((color, index) => {
+        gradient.addColorStop(index / Math.max(1, colors.length - 1), color);
+      });
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, width, height);
+    }
 
     ctx.fillStyle = "rgba(0,0,0,0.32)";
     ctx.fillRect(0, height * 0.55, width, height * 0.45);
@@ -134,7 +165,7 @@ export default function DownloadPage() {
     ctx.font = `600 ${Math.round(width * 0.018)}px system-ui, sans-serif`;
     ctx.fillText(
       activeVideo.source === "procedural"
-        ? "MISTY AI · PROCEDURAL RENDER"
+        ? "MISTY AI · AI SCENE RENDER"
         : "MISTY AI · DEMO PREVIEW",
       width * 0.06,
       height * 0.1,
@@ -142,26 +173,29 @@ export default function DownloadPage() {
 
     ctx.fillStyle = "#ffffff";
     ctx.font = `700 ${Math.round(width * 0.055)}px system-ui, sans-serif`;
-    wrapText(
+    const titleLineHeight = width * 0.062;
+    const titleLines = wrapText(
       ctx,
       activeVideo.title,
       width * 0.06,
       height * 0.68,
       width * 0.88,
-      width * 0.062,
+      titleLineHeight,
       2,
     );
 
     ctx.fillStyle = "rgba(255,255,255,0.72)";
     ctx.font = `400 ${Math.round(width * 0.021)}px system-ui, sans-serif`;
+    const promptTop =
+      height * 0.68 + Math.max(1, titleLines) * titleLineHeight + width * 0.014;
     wrapText(
       ctx,
       activeVideo.prompt,
       width * 0.06,
-      height * 0.82,
+      promptTop,
       width * 0.88,
       width * 0.028,
-      3,
+      2,
     );
 
     ctx.fillStyle = "rgba(255,255,255,0.6)";
@@ -346,7 +380,9 @@ export default function DownloadPage() {
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block text-xs font-medium text-white">
-                    Download demo poster (PNG)
+                    {activeVideo.source === "procedural"
+                      ? "Download scene poster (PNG)"
+                      : "Download demo poster (PNG)"}
                   </span>
                   <span className="block text-[10px] text-white/45">
                     Real image export · {activeVideo.aspect} ratio
@@ -442,8 +478,9 @@ export default function DownloadPage() {
           <div className="flex items-start gap-2.5 rounded-2xl border border-amber-400/20 bg-amber-400/[0.06] p-3.5 text-[11px] leading-relaxed text-amber-100/75">
             <Info className="mt-0.5 size-4 shrink-0 text-amber-300" />
             <p>
-              This is a demo download. Poster and project files are generated in
-              your browser; no real video is rendered and no paid API is used.
+              {activeVideo.source === "procedural"
+                ? "This clip was generated in this browser: the scene image came from the free Pollinations service and the 10s video was encoded locally. No paid API or key is used, and the file lives only in this session."
+                : "This is a demo download. Poster and project files are generated in your browser; no real video is rendered and no paid API is used."}
             </p>
           </div>
         </div>

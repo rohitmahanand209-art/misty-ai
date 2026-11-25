@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Film, Play } from "lucide-react";
 import type { DemoVideo } from "@/lib/demo-data";
-import { getVideoBlob } from "@/lib/video-blobs";
+import { getSceneImage, getVideoBlob } from "@/lib/video-blobs";
 import { cn } from "@/lib/utils";
 
 const ASPECT_CLASS: Record<DemoVideo["aspect"], string> = {
@@ -37,9 +37,11 @@ export function VideoThumb({
     video?.gradient ??
     "linear-gradient(135deg,#7c3aed 0%,#4f46e5 50%,#0ea5e9 100%)";
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [hasScene, setHasScene] = useState(false);
 
   useEffect(() => {
     setVideoUrl(getVideoBlob(video?.id)?.url ?? null);
+    setHasScene(Boolean(getSceneImage(video?.id)));
   }, [video?.id]);
 
   return (
@@ -82,7 +84,9 @@ export function VideoThumb({
         <Film className="size-3" />
         {video?.source === "procedural"
           ? videoUrl
-            ? "Procedural render"
+            ? hasScene
+              ? "AI scene · local render"
+              : "Abstract render"
             : "Render expired"
           : "Demo preview"}
       </div>

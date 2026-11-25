@@ -87,12 +87,35 @@ export function PromptStudio({
   const canLive = user?.role === "admin";
   const [liveMode, setLiveMode] = useState(false);
   const provider = canLive && liveMode ? "procedural" : "demo";
-  const { status, progress, stepLabel, steps, result, error, start, reset } =
-    useDemoGeneration(provider);
+  const {
+    status,
+    progress,
+    stepLabel,
+    steps,
+    result,
+    error,
+    retryAfter,
+    canFallback,
+    usedSceneImage,
+    start,
+    reset,
+    renderFallback,
+  } = useDemoGeneration(provider);
 
   const working = status === "working";
   const done = status === "done" && result;
   const voiceLabel = VOICES.find((item) => item.id === voice)?.label ?? "No voice over";
+
+  const [countdown, setCountdown] = useState(0);
+  useEffect(() => {
+    setCountdown(retryAfter);
+  }, [retryAfter]);
+  useEffect(() => {
+    if (countdown <= 0) return;
+    const timer = setTimeout(() => setCountdown((value) => value - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [countdown]);
+  const retryReady = retryAfter > 0 && countdown <= 0;
 
   function handleGenerate() {
     if (working) return;
@@ -179,7 +202,7 @@ export function PromptStudio({
                 provider === "procedural" ? "bg-emerald-300" : "bg-amber-300",
               )}
             />
-            {provider === "procedural" ? "Procedural render" : "Demo mode"}
+            {provider === "procedural" ? "AI scene render" : "Demo mode"}
           </span>
         </div>
       </div>
@@ -331,7 +354,7 @@ export function PromptStudio({
 
       <p className="mt-1 text-center text-[11px] leading-relaxed text-white/35">
         {provider === "procedural"
-          ? "Rendered locally in your browser with canvas + MediaRecorder — no AI model, no API, no cost. The file is ephemeral and stays on this device."
+          ? "Scene image from the free Pollinations service (no API key). The 10s video is animated and encoded locally in your browser — nothing is uploaded, and the file stays on this device."
           : "Demo interface only — no real AI render or paid API is called. Your settings are saved locally for preview."}
       </p>
 
@@ -361,9 +384,36 @@ export function PromptStudio({
       )}
 
       {error && (
-        <p className="mt-3 rounded-xl border border-red-400/30 bg-red-400/10 p-3 text-[11px] leading-relaxed text-red-200">
-          {error}
-        </p>
+        <div className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/[0.08] p-3">
+          <p className="text-[11px] leading-relaxed text-amber-100/90">
+            {error}
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {canFallback && (
+              <button
+                type="button"
+                onClick={renderFallback}
+                className="rounded-lg border border-white/15 bg-white/5 px-2.5 py-1 text-[11px] font-medium text-white/80 transition hover:bg-white/10 hover:text-white"
+              >
+                Render abstract clip instead
+              </button>
+            )}
+            {retryAfter > 0 && !retryReady && (
+              <span className="rounded-lg border border-white/10 px-2.5 py-1 text-[11px] text-white/45">
+                Free limit resets in {countdown}s
+              </span>
+            )}
+            {retryReady && (
+              <button
+                type="button"
+                onClick={handleGenerate}
+                className="rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-2.5 py-1 text-[11px] font-medium text-emerald-200 transition hover:bg-emerald-400/15"
+              >
+                Retry now
+              </button>
+            )}
+          </div>
+        </div>
       )}
 
       {done && (
@@ -376,7 +426,9 @@ export function PromptStudio({
               <p className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-emerald-300">
                 <Check className="size-3.5" />{" "}
                 {provider === "procedural"
-                  ? "Procedural clip ready"
+                  ? usedSceneImage
+                    ? "AI scene clip ready"
+                    : "Abstract clip ready"
                   : "Demo clip ready"}
               </p>
               <h3 className="mt-1 truncate text-sm font-semibold text-white">

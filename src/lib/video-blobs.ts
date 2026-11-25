@@ -7,6 +7,7 @@ type StoredBlob = {
 };
 
 const registry = new Map<string, StoredBlob>();
+const sceneRegistry = new Map<string, StoredBlob>();
 
 export function registerVideoBlob(id: string, blob: Blob) {
   const existing = registry.get(id);
@@ -29,6 +30,21 @@ export function releaseVideoBlob(id: string) {
     URL.revokeObjectURL(existing.url);
     registry.delete(id);
   }
+}
+
+export function registerSceneImage(id: string, blob: Blob) {
+  const existing = sceneRegistry.get(id);
+  if (existing) URL.revokeObjectURL(existing.url);
+  sceneRegistry.set(id, {
+    url: URL.createObjectURL(blob),
+    mime: blob.type || "image/jpeg",
+    size: blob.size,
+  });
+}
+
+export function getSceneImage(id: string | undefined | null): StoredBlob | undefined {
+  if (!id) return undefined;
+  return sceneRegistry.get(id);
 }
 
 export function formatBytes(bytes: number): string {
