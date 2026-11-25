@@ -34,6 +34,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { quotaLabel } from "@/lib/demo-data";
 import { cn } from "@/lib/utils";
 
 const NAV_LINKS = [
@@ -119,7 +120,7 @@ export function SiteHeader() {
                       {user.email}
                     </p>
                     <p className="mt-1 text-[11px] text-violet-300">
-                      {user.plan} plan · {user.credits} credits
+                      {user.plan} plan · {quotaLabel(user.plan)}
                     </p>
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />

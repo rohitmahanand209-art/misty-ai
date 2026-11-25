@@ -18,7 +18,14 @@ import { useAuth } from "@/components/providers/auth-provider";
 import { VideoCard } from "@/components/video-thumb";
 import { Button } from "@/components/ui/button";
 import { getVideos, subscribeStore } from "@/lib/demo-store";
-import { MODE_LABELS, type DemoVideo } from "@/lib/demo-data";
+import {
+  MODE_LABELS,
+  VIDEO_SECONDS,
+  countVideosInQuota,
+  getPlanLimit,
+  quotaLabel,
+  type DemoVideo,
+} from "@/lib/demo-data";
 
 const QUICK = [
   {
@@ -61,6 +68,11 @@ export default function DashboardPage() {
     return subscribeStore(sync);
   }, []);
 
+  const plan = user?.plan ?? "Free";
+  const planLimit = getPlanLimit(plan);
+  const videosUsed = countVideosInQuota(videos, plan);
+  const videosLeft = Math.max(0, planLimit.videos - videosUsed);
+
   const stats = useMemo(() => {
     const totalSeconds = videos.reduce((sum, video) => sum + video.duration, 0);
     return [
@@ -71,10 +83,10 @@ export default function DashboardPage() {
         hint: "All demo projects",
       },
       {
-        label: "Credits left",
-        value: (user?.credits ?? 0).toString(),
+        label: "Videos left",
+        value: videosLeft.toString(),
         icon: Wand2,
-        hint: `${user?.plan ?? "Free"} plan`,
+        hint: `${quotaLabel(plan)}`,
       },
       {
         label: "Total length",
@@ -89,7 +101,7 @@ export default function DashboardPage() {
         hint: "Demo posters available",
       },
     ];
-  }, [videos, user]);
+  }, [videos, plan, videosLeft]);
 
   const recent = videos.slice(0, 3);
 
@@ -176,26 +188,29 @@ export default function DashboardPage() {
         <div className="rounded-2xl border border-violet-400/20 bg-gradient-to-br from-violet-600/15 to-blue-600/10 p-4 sm:p-5">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-white">
-              {user?.plan} plan usage
+              {plan} plan usage
             </h2>
             <TrendingUp className="size-4 text-violet-300" />
           </div>
           <div className="mt-3 flex items-end gap-1.5">
             <span className="text-3xl font-semibold text-white">
-              {user?.credits}
+              {videosUsed}
             </span>
-            <span className="pb-1 text-xs text-white/45">credits left</span>
+            <span className="pb-1 text-xs text-white/45">
+              of {planLimit.videos} videos this {planLimit.period}
+            </span>
           </div>
           <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
             <div
               className="h-full rounded-full brand-gradient"
               style={{
-                width: `${Math.min(100, ((user?.credits ?? 0) / (user?.role === "admin" ? 5000 : 300)) * 100)}%`,
+                width: `${Math.min(100, (videosUsed / planLimit.videos) * 100)}%`,
               }}
             />
           </div>
           <p className="mt-2 text-[11px] leading-relaxed text-white/45">
-            Credits are demo values. No billing is connected in this preview.
+            {quotaLabel(plan)} · every video is {VIDEO_SECONDS}s. Plan limits
+            apply to this interface only — no billing is connected.
           </p>
           <Button
             asChild

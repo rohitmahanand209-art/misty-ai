@@ -22,8 +22,8 @@ export default function PricingPage() {
           <span className="text-gradient">your creative pace.</span>
         </h1>
         <p className="mx-auto mt-3 max-w-xl text-[15px] leading-relaxed text-white/55">
-          Every plan includes the full studio interface. Upgrade for longer
-          clips, higher quality and Hindi voice over.
+          Every plan includes the full studio interface with 10-second videos.
+          Pick the number of videos that matches your creative pace.
         </p>
       </div>
 
@@ -44,7 +44,7 @@ export default function PricingPage() {
         </h2>
         <p className="mx-auto mt-2 max-w-md text-sm text-white/50">
           Create an account, explore all four tools and keep your demo projects
-          in one dashboard.
+          in one dashboard. Free includes 5 videos per day.
         </p>
         <div className="mt-5 flex flex-col justify-center gap-2.5 sm:flex-row">
           <Button

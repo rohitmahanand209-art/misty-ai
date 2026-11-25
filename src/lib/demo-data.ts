@@ -2,11 +2,13 @@ export type VideoMode = "text" | "image" | "cartoon" | "voice";
 
 export type VideoStatus = "ready" | "processing" | "failed";
 
+export type PlanName = "Free" | "Basic" | "Pro" | "Premium";
+
 export type DemoUser = {
   name: string;
   email: string;
   role: "user" | "admin";
-  plan: "Free" | "Creator" | "Studio";
+  plan: PlanName;
   credits: number;
   createdAt: string;
 };
@@ -27,6 +29,52 @@ export type DemoVideo = {
   sizeLabel: string;
   source?: "demo" | "procedural";
 };
+
+export const VIDEO_SECONDS = 10;
+
+export type PlanLimit = {
+  videos: number;
+  period: "day" | "month";
+};
+
+export const PLAN_LIMITS: Record<PlanName, PlanLimit> = {
+  Free: { videos: 5, period: "day" },
+  Basic: { videos: 30, period: "month" },
+  Pro: { videos: 100, period: "month" },
+  Premium: { videos: 300, period: "month" },
+};
+
+export function getPlanLimit(plan: PlanName | undefined | null): PlanLimit {
+  return PLAN_LIMITS[plan ?? "Free"] ?? PLAN_LIMITS.Free;
+}
+
+export function quotaLabel(plan: PlanName | undefined | null): string {
+  const limit = getPlanLimit(plan);
+  return `${limit.videos} videos / ${limit.period}`;
+}
+
+export function quotaWindowStart(
+  plan: PlanName | undefined | null,
+  now: Date = new Date(),
+): Date {
+  const limit = getPlanLimit(plan);
+  if (limit.period === "day") {
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  }
+  return new Date(now.getFullYear(), now.getMonth(), 1);
+}
+
+export function countVideosInQuota(
+  videos: Pick<DemoVideo, "createdAt">[],
+  plan: PlanName | undefined | null,
+  now: Date = new Date(),
+): number {
+  const start = quotaWindowStart(plan, now).getTime();
+  return videos.filter((video) => {
+    const created = new Date(video.createdAt).getTime();
+    return Number.isFinite(created) && created >= start;
+  }).length;
+}
 
 export const MODE_LABELS: Record<VideoMode, string> = {
   text: "Text to Video",
@@ -211,23 +259,23 @@ export const DEMO_USERS: DemoUser[] = [
     email: "aarav@mistyai.app",
     role: "user",
     plan: "Free",
-    credits: 18,
+    credits: 5,
     createdAt: daysAgo(14),
   },
   {
     name: "Priya Nair",
     email: "priya@mistyai.app",
     role: "user",
-    plan: "Creator",
-    credits: 240,
+    plan: "Basic",
+    credits: 30,
     createdAt: daysAgo(9),
   },
   {
     name: "Rohan Verma",
     email: "rohan@mistyai.app",
     role: "user",
-    plan: "Studio",
-    credits: 900,
+    plan: "Pro",
+    credits: 100,
     createdAt: daysAgo(6),
   },
   {
@@ -235,15 +283,15 @@ export const DEMO_USERS: DemoUser[] = [
     email: "meera@mistyai.app",
     role: "user",
     plan: "Free",
-    credits: 4,
+    credits: 5,
     createdAt: daysAgo(3),
   },
   {
     name: "Dev Patel",
     email: "dev@mistyai.app",
     role: "user",
-    plan: "Creator",
-    credits: 120,
+    plan: "Premium",
+    credits: 300,
     createdAt: daysAgo(2),
   },
 ];
@@ -252,21 +300,31 @@ export const ADMIN_DEMO: DemoUser = {
   name: "Misty Admin",
   email: "admin@mistyai.app",
   role: "admin",
-  plan: "Studio",
-  credits: 5000,
+  plan: "Premium",
+  credits: 300,
   createdAt: daysAgo(120),
 };
 
-export const PLANS = [
+export const PLANS: {
+  name: PlanName;
+  tagline: string;
+  monthly: number;
+  yearly: number;
+  quota: string;
+  features: string[];
+  cta: string;
+  highlight: boolean;
+}[] = [
   {
     name: "Free",
     tagline: "Try the studio, no card needed",
     monthly: 0,
     yearly: 0,
-    credits: "20 demo credits / month",
+    quota: "5 videos per day",
     features: [
+      "5 videos every day",
+      "10-second clips",
       "720p demo renders",
-      "Up to 10 second clips",
       "English voice over",
       "Watermarked exports",
       "Community support",
@@ -275,37 +333,55 @@ export const PLANS = [
     highlight: false,
   },
   {
-    name: "Creator",
-    tagline: "For creators shipping every week",
-    monthly: 799,
-    yearly: 7990,
-    credits: "300 credits / month",
+    name: "Basic",
+    tagline: "For occasional creators",
+    monthly: 499,
+    yearly: 4990,
+    quota: "30 videos per month",
     features: [
+      "30 videos every month",
+      "10-second clips",
       "1080p demo renders",
-      "Up to 30 second clips",
       "Hindi + English voices",
       "No watermark",
+      "Email support",
+    ],
+    cta: "Choose Basic",
+    highlight: false,
+  },
+  {
+    name: "Pro",
+    tagline: "For creators shipping every week",
+    monthly: 999,
+    yearly: 9990,
+    quota: "100 videos per month",
+    features: [
+      "100 videos every month",
+      "10-second clips",
+      "1080p demo renders",
       "Image to video + cartoon styles",
+      "No watermark",
       "Priority email support",
     ],
-    cta: "Choose Creator",
+    cta: "Choose Pro",
     highlight: true,
   },
   {
-    name: "Studio",
+    name: "Premium",
     tagline: "For teams and agencies",
-    monthly: 2499,
-    yearly: 24990,
-    credits: "1,500 credits / month",
+    monthly: 1999,
+    yearly: 19990,
+    quota: "300 videos per month",
     features: [
-      "Everything in Creator",
+      "300 videos every month",
+      "10-second clips",
       "4K demo renders (coming soon)",
       "5 team seats",
       "Brand presets and style memory",
       "Commercial usage licence",
       "Priority support",
     ],
-    cta: "Choose Studio",
+    cta: "Choose Premium",
     highlight: false,
   },
 ];

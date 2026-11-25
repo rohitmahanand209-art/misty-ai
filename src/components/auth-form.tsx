@@ -181,7 +181,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
           >
             <span className="flex items-center gap-1.5 text-xs font-medium text-white">
               <User className="size-3.5 text-violet-300" />
-              Creator demo
+              User demo
             </span>
             <span className="mt-0.5 block text-[10px] text-white/40">
               aarav@mistyai.app · demo123

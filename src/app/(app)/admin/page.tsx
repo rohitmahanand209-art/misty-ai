@@ -27,6 +27,7 @@ import {
 import {
   MODE_LABELS,
   PLANS,
+  getPlanLimit,
   type DemoUser,
   type DemoVideo,
   type VideoMode,
@@ -35,8 +36,9 @@ import { cn } from "@/lib/utils";
 
 const PLAN_STYLES: Record<DemoUser["plan"], string> = {
   Free: "border-white/10 bg-white/5 text-white/60",
-  Creator: "border-violet-400/30 bg-violet-500/15 text-violet-200",
-  Studio: "border-amber-400/30 bg-amber-400/10 text-amber-200",
+  Basic: "border-sky-400/30 bg-sky-400/10 text-sky-200",
+  Pro: "border-violet-400/30 bg-violet-500/15 text-violet-200",
+  Premium: "border-amber-400/30 bg-amber-400/10 text-amber-200",
 };
 
 export default function AdminPage() {
@@ -197,7 +199,7 @@ export default function AdminPage() {
                 <tr className="border-b border-white/8 text-[10px] uppercase tracking-wider text-white/35">
                   <th className="pb-2 pr-3 font-medium">User</th>
                   <th className="pb-2 pr-3 font-medium">Plan</th>
-                  <th className="pb-2 pr-3 font-medium">Credits</th>
+                  <th className="pb-2 pr-3 font-medium">Video limit</th>
                   <th className="pb-2 pr-3 font-medium">Joined</th>
                   <th className="pb-2 font-medium" />
                 </tr>
@@ -237,7 +239,8 @@ export default function AdminPage() {
                       </span>
                     </td>
                     <td className="py-2.5 pr-3 text-white/55">
-                      {item.credits}
+                      {getPlanLimit(item.plan).videos} /{" "}
+                      {getPlanLimit(item.plan).period}
                     </td>
                     <td className="py-2.5 pr-3 text-white/35">
                       {new Date(item.createdAt).toLocaleDateString("en-IN", {

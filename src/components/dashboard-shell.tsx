@@ -19,6 +19,12 @@ import {
 } from "lucide-react";
 import { Brand } from "@/components/brand";
 import { useAuth } from "@/components/providers/auth-provider";
+import { getVideos, subscribeStore } from "@/lib/demo-store";
+import {
+  countVideosInQuota,
+  getPlanLimit,
+  type DemoVideo,
+} from "@/lib/demo-data";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -102,6 +108,17 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
 
 function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
   const { user, signOut } = useAuth();
+  const [videos, setVideos] = useState<DemoVideo[]>([]);
+
+  useEffect(() => {
+    const sync = () => setVideos(getVideos());
+    sync();
+    return subscribeStore(sync);
+  }, []);
+
+  const plan = user?.plan ?? "Free";
+  const planLimit = getPlanLimit(plan);
+  const videosUsed = countVideosInQuota(videos, plan);
 
   return (
     <div className="flex h-full flex-col">
@@ -119,15 +136,17 @@ function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
             <div className="flex items-center justify-between text-[11px] text-white/60">
               <span className="flex items-center gap-1.5">
                 <Wand2 className="size-3.5 text-violet-300" />
-                {user.plan} plan
+                {plan} plan
               </span>
-              <span>{user.credits} credits</span>
+              <span>
+                {videosUsed}/{planLimit.videos} this {planLimit.period}
+              </span>
             </div>
             <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
               <div
                 className="h-full rounded-full brand-gradient"
                 style={{
-                  width: `${Math.min(100, (user.credits / (user.role === "admin" ? 5000 : 300)) * 100)}%`,
+                  width: `${Math.min(100, (videosUsed / planLimit.videos) * 100)}%`,
                 }}
               />
             </div>

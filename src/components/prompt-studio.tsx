@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ArrowRight,
   Check,
@@ -28,10 +28,15 @@ import { useAuth } from "@/components/providers/auth-provider";
 import {
   PROMPT_IDEAS,
   STYLES,
+  VIDEO_SECONDS,
   VOICES,
+  countVideosInQuota,
+  getPlanLimit,
+  quotaLabel,
   type DemoVideo,
   type VideoMode,
 } from "@/lib/demo-data";
+import { getVideos, subscribeStore } from "@/lib/demo-store";
 import { VideoThumb } from "@/components/video-thumb";
 import { cn } from "@/lib/utils";
 
@@ -39,8 +44,6 @@ const ASPECTS: { value: DemoVideo["aspect"]; label: string; hint: string }[] = [
   { value: "16:9", label: "16:9", hint: "YouTube" },
   { value: "9:16", label: "9:16", hint: "Reels" },
 ];
-
-const DURATIONS = [5, 8, 10, 15];
 
 export function PromptStudio({
   mode = "text",
@@ -66,9 +69,21 @@ export function PromptStudio({
   const [prompt, setPrompt] = useState("");
   const [style, setStyle] = useState(defaultStyle);
   const [aspect, setAspect] = useState<DemoVideo["aspect"]>("16:9");
-  const [duration, setDuration] = useState(8);
+  const duration = VIDEO_SECONDS;
   const [voice, setVoice] = useState("en-female");
   const { user } = useAuth();
+  const [library, setLibrary] = useState<DemoVideo[]>([]);
+
+  useEffect(() => {
+    const sync = () => setLibrary(getVideos());
+    sync();
+    return subscribeStore(sync);
+  }, []);
+
+  const plan = user?.plan ?? "Free";
+  const planLimit = getPlanLimit(plan);
+  const videosUsed = countVideosInQuota(library, plan);
+  const limitReached = videosUsed >= planLimit.videos;
   const canLive = user?.role === "admin";
   const [liveMode, setLiveMode] = useState(false);
   const provider = canLive && liveMode ? "procedural" : "demo";
@@ -83,6 +98,12 @@ export function PromptStudio({
     if (working) return;
     if (prompt.trim().length < 8) {
       toast.error("Add a little more detail to your prompt (8+ characters).");
+      return;
+    }
+    if (limitReached) {
+      toast.error(
+        `${plan} plan limit reached (${videosUsed}/${planLimit.videos} videos this ${planLimit.period}). Upgrade for more.`,
+      );
       return;
     }
     start({
@@ -266,23 +287,13 @@ export function PromptStudio({
           <label className="text-[11px] font-medium uppercase tracking-wider text-white/40">
             Duration
           </label>
-          <div className="flex gap-1.5">
-            {DURATIONS.map((item) => (
-              <button
-                key={item}
-                type="button"
-                onClick={() => setDuration(item)}
-                disabled={working}
-                className={cn(
-                  "flex-1 rounded-xl border px-2 py-2.5 text-xs font-medium transition",
-                  duration === item
-                    ? "border-violet-400/60 bg-violet-500/15 text-white"
-                    : "border-white/10 bg-white/[0.03] text-white/55 hover:border-white/20 hover:text-white",
-                )}
-              >
-                {item}s
-              </button>
-            ))}
+          <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5">
+            <span className="text-xs font-medium text-white">
+              {VIDEO_SECONDS} seconds
+            </span>
+            <span className="text-[10px] text-white/40">
+              Fixed on every plan
+            </span>
           </div>
         </div>
       </div>
@@ -307,7 +318,18 @@ export function PromptStudio({
         )}
       </Button>
 
-      <p className="mt-2.5 text-center text-[11px] leading-relaxed text-white/35">
+      <p
+        className={cn(
+          "mt-2.5 text-center text-[11px] leading-relaxed",
+          limitReached ? "text-amber-200/80" : "text-white/35",
+        )}
+      >
+        {plan} plan · {videosUsed} of {planLimit.videos} videos used this{" "}
+        {planLimit.period} ({quotaLabel(plan)})
+        {limitReached ? " — limit reached, upgrade to keep creating." : ""}
+      </p>
+
+      <p className="mt-1 text-center text-[11px] leading-relaxed text-white/35">
         {provider === "procedural"
           ? "Rendered locally in your browser with canvas + MediaRecorder — no AI model, no API, no cost. The file is ephemeral and stays on this device."
           : "Demo interface only — no real AI render or paid API is called. Your settings are saved locally for preview."}

@@ -28,8 +28,8 @@ import { cn } from "@/lib/utils";
 
 const QUALITIES = [
   { id: "720p", label: "720p HD", note: "Free plan · smallest file", locked: false },
-  { id: "1080p", label: "1080p Full HD", note: "Creator plan · recommended", locked: false },
-  { id: "4k", label: "4K Ultra HD", note: "Studio plan · coming soon", locked: true },
+  { id: "1080p", label: "1080p Full HD", note: "Pro plan · recommended", locked: false },
+  { id: "4k", label: "4K Ultra HD", note: "Premium plan · coming soon", locked: true },
 ];
 
 function wrapText(

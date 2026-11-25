@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
   Check,
@@ -25,7 +25,17 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useDemoGeneration } from "@/hooks/use-demo-generation";
-import { STYLES, VOICES, type DemoVideo } from "@/lib/demo-data";
+import {
+  STYLES,
+  VIDEO_SECONDS,
+  VOICES,
+  countVideosInQuota,
+  getPlanLimit,
+  quotaLabel,
+  type DemoVideo,
+} from "@/lib/demo-data";
+import { getVideos, subscribeStore } from "@/lib/demo-store";
+import { useAuth } from "@/components/providers/auth-provider";
 import { VideoThumb } from "@/components/video-thumb";
 import { cn } from "@/lib/utils";
 
@@ -65,10 +75,23 @@ export function ImageStudio() {
   const [motion, setMotion] = useState(MOTIONS[0].id);
   const [style, setStyle] = useState("Realistic");
   const [aspect, setAspect] = useState<DemoVideo["aspect"]>("16:9");
-  const [duration, setDuration] = useState(8);
+  const duration = VIDEO_SECONDS;
   const [voice, setVoice] = useState("none");
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const { user } = useAuth();
+  const [library, setLibrary] = useState<DemoVideo[]>([]);
+
+  useEffect(() => {
+    const sync = () => setLibrary(getVideos());
+    sync();
+    return subscribeStore(sync);
+  }, []);
+
+  const plan = user?.plan ?? "Free";
+  const planLimit = getPlanLimit(plan);
+  const videosUsed = countVideosInQuota(library, plan);
+  const limitReached = videosUsed >= planLimit.videos;
   const { status, progress, stepLabel, result, start, reset } =
     useDemoGeneration();
 
@@ -105,6 +128,12 @@ export function ImageStudio() {
     }
     if (prompt.trim().length < 6) {
       toast.error("Describe the motion you want (6+ characters).");
+      return;
+    }
+    if (limitReached) {
+      toast.error(
+        `${plan} plan limit reached (${videosUsed}/${planLimit.videos} videos this ${planLimit.period}). Upgrade for more.`,
+      );
       return;
     }
     start({
@@ -314,23 +343,13 @@ export function ImageStudio() {
               <label className="text-[11px] font-medium uppercase tracking-wider text-white/40">
                 Duration
               </label>
-              <div className="flex gap-1.5">
-                {[5, 8, 10].map((item) => (
-                  <button
-                    key={item}
-                    type="button"
-                    onClick={() => setDuration(item)}
-                    disabled={working}
-                    className={cn(
-                      "flex-1 rounded-xl border py-2.5 text-xs font-medium transition",
-                      duration === item
-                        ? "border-violet-400/60 bg-violet-500/15 text-white"
-                        : "border-white/10 bg-white/[0.03] text-white/55 hover:border-white/20",
-                    )}
-                  >
-                    {item}s
-                  </button>
-                ))}
+              <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5">
+                <span className="text-xs font-medium text-white">
+                  {VIDEO_SECONDS} seconds
+                </span>
+                <span className="text-[10px] text-white/40">
+                  Fixed on every plan
+                </span>
               </div>
             </div>
           </div>
@@ -374,6 +393,16 @@ export function ImageStudio() {
           </Button>
           <p className="mt-2 text-center text-[11px] text-white/35">
             Demo only. Your image never leaves this browser.
+          </p>
+          <p
+            className={cn(
+              "mt-1 text-center text-[11px]",
+              limitReached ? "text-amber-200/80" : "text-white/35",
+            )}
+          >
+            {plan} plan · {videosUsed} of {planLimit.videos} videos used this{" "}
+            {planLimit.period} ({quotaLabel(plan)})
+            {limitReached ? " — limit reached, upgrade to keep creating." : ""}
           </p>
         </div>
       </div>

@@ -7,16 +7,16 @@ import { Button } from "@/components/ui/button";
 import { PLANS } from "@/lib/demo-data";
 import { cn } from "@/lib/utils";
 
-const COMPARISON = [
-  { feature: "Demo credits each month", free: "20", creator: "300", studio: "1,500" },
-  { feature: "Max clip length", free: "10s", creator: "30s", studio: "60s" },
-  { feature: "Export quality", free: "720p", creator: "1080p", studio: "4K (soon)" },
-  { feature: "Watermark", free: "Yes", creator: "No", studio: "No" },
-  { feature: "Hindi + English voice", free: "English", creator: "Both", studio: "Both" },
-  { feature: "Image to video", free: "—", creator: "Yes", studio: "Yes" },
-  { feature: "Cartoon styles", free: "2 styles", creator: "All styles", studio: "All styles" },
-  { feature: "Team seats", free: "1", creator: "1", studio: "5" },
-  { feature: "Commercial licence", free: "—", creator: "Yes", studio: "Yes" },
+const COMPARISON: { feature: string; values: [string, string, string, string] }[] = [
+  { feature: "Videos included", values: ["5 / day", "30 / month", "100 / month", "300 / month"] },
+  { feature: "Video length", values: ["10s each", "10s each", "10s each", "10s each"] },
+  { feature: "Export quality", values: ["720p", "1080p", "1080p", "4K (soon)"] },
+  { feature: "Watermark", values: ["Yes", "No", "No", "No"] },
+  { feature: "Hindi + English voice", values: ["English", "Both", "Both", "Both"] },
+  { feature: "Image to video", values: ["—", "Yes", "Yes", "Yes"] },
+  { feature: "Cartoon styles", values: ["2 styles", "All styles", "All styles", "All styles"] },
+  { feature: "Team seats", values: ["1", "1", "1", "5"] },
+  { feature: "Commercial licence", values: ["—", "Yes", "Yes", "Yes"] },
 ];
 
 export function PricingTable() {
@@ -52,7 +52,7 @@ export function PricingTable() {
         </div>
       </div>
 
-      <div className="mt-7 grid gap-4 md:grid-cols-3">
+      <div className="mt-7 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {PLANS.map((plan) => {
           const price = yearly ? plan.yearly : plan.monthly;
           return (
@@ -82,8 +82,8 @@ export function PricingTable() {
                   /{yearly ? "year" : "month"}
                 </span>
               </div>
-              <p className="mt-1 text-[11px] text-violet-200/80">
-                {plan.credits}
+              <p className="mt-1 text-[11px] font-medium text-violet-200/80">
+                {plan.quota}
               </p>
 
               <ul className="mt-5 flex-1 space-y-2.5">
@@ -126,15 +126,17 @@ export function PricingTable() {
                 <th className="px-4 py-3 text-xs font-medium uppercase tracking-wider text-white/40">
                   Feature
                 </th>
-                <th className="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-white/40">
-                  Free
-                </th>
-                <th className="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-violet-300">
-                  Creator
-                </th>
-                <th className="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-white/40">
-                  Studio
-                </th>
+                {PLANS.map((plan) => (
+                  <th
+                    key={plan.name}
+                    className={cn(
+                      "px-4 py-3 text-center text-xs font-medium uppercase tracking-wider",
+                      plan.highlight ? "text-violet-300" : "text-white/40",
+                    )}
+                  >
+                    {plan.name}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
@@ -146,15 +148,22 @@ export function PricingTable() {
                   <td className="px-4 py-3 text-[13px] text-white/65">
                     {row.feature}
                   </td>
-                  <td className="px-4 py-3 text-center text-[13px] text-white/50">
-                    {row.free}
-                  </td>
-                  <td className="bg-violet-500/[0.06] px-4 py-3 text-center text-[13px] font-medium text-white">
-                    {row.creator}
-                  </td>
-                  <td className="px-4 py-3 text-center text-[13px] text-white/50">
-                    {row.studio}
-                  </td>
+                  {row.values.map((value, index) => {
+                    const highlighted = PLANS[index]?.highlight;
+                    return (
+                      <td
+                        key={PLANS[index]?.name ?? index}
+                        className={cn(
+                          "px-4 py-3 text-center text-[13px]",
+                          highlighted
+                            ? "bg-violet-500/[0.06] font-medium text-white"
+                            : "text-white/50",
+                        )}
+                      >
+                        {value}
+                      </td>
+                    );
+                  })}
                 </tr>
               ))}
             </tbody>
