@@ -258,6 +258,380 @@ function drawScene(
 
 type SceneSource = CanvasImageSource & { width: number; height: number };
 
+type SceneAnalysis = {
+  cx: number;
+  cy: number;
+  rx: number;
+  ry: number;
+};
+
+type Particle = {
+  kind: "glow" | "leaf" | "butterfly";
+  depth: number;
+  x: number;
+  y: number;
+  driftX: number;
+  driftY: number;
+  size: number;
+  phase: number;
+  spin: number;
+  hue: number;
+  alpha: number;
+  speed: number;
+};
+
+function makeRng(seed: number) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
+
+/**
+ * Cheap saliency heuristic: saturation plus local edge contrast, biased toward
+ * the centre of the frame. Used only to aim the simulated micro-motion at the
+ * most "subject-like" region — it is NOT object detection or segmentation.
+ */
+function analyzeScene(image: SceneSource): SceneAnalysis {
+  const fallback: SceneAnalysis = { cx: 0.5, cy: 0.55, rx: 0.3, ry: 0.34 };
+  try {
+    const w = 64;
+    const h = Math.max(24, Math.round((64 * image.height) / image.width));
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return fallback;
+    ctx.drawImage(image, 0, 0, w, h);
+    const data = ctx.getImageData(0, 0, w, h).data;
+
+    const lum = new Float32Array(w * h);
+    for (let i = 0; i < w * h; i += 1) {
+      lum[i] = (data[i * 4] * 0.299 + data[i * 4 + 1] * 0.587 + data[i * 4 + 2] * 0.114) / 255;
+    }
+
+    let totalWeight = 0;
+    let sumX = 0;
+    let sumY = 0;
+    let sumXX = 0;
+    let sumYY = 0;
+
+    for (let y = 1; y < h - 1; y += 1) {
+      for (let x = 1; x < w - 1; x += 1) {
+        const idx = y * w + x;
+        const r = data[idx * 4] / 255;
+        const g = data[idx * 4 + 1] / 255;
+        const b = data[idx * 4 + 2] / 255;
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        const saturation = max === 0 ? 0 : (max - min) / max;
+        const edge =
+          Math.abs(lum[idx] - lum[idx - 1]) +
+          Math.abs(lum[idx] - lum[idx + 1]) +
+          Math.abs(lum[idx] - lum[idx - w]) +
+          Math.abs(lum[idx] - lum[idx + w]);
+
+        const nx = x / w;
+        const ny = y / h;
+        const centreBias =
+          1 - Math.min(1, Math.hypot((nx - 0.5) / 0.62, (ny - 0.56) / 0.66)) * 0.85;
+        const weight = (saturation * 0.9 + Math.min(1, edge * 2.4)) * Math.max(0.05, centreBias);
+
+        totalWeight += weight;
+        sumX += nx * weight;
+        sumY += ny * weight;
+        sumXX += nx * nx * weight;
+        sumYY += ny * ny * weight;
+      }
+    }
+
+    if (totalWeight < 0.001) return fallback;
+    const cx = sumX / totalWeight;
+    const cy = sumY / totalWeight;
+    const varX = Math.max(0, sumXX / totalWeight - cx * cx);
+    const varY = Math.max(0, sumYY / totalWeight - cy * cy);
+
+    return {
+      cx: clamp01(cx),
+      cy: clamp01(cy),
+      rx: Math.min(0.42, Math.max(0.18, Math.sqrt(varX) * 2.1)),
+      ry: Math.min(0.46, Math.max(0.18, Math.sqrt(varY) * 2.1)),
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function createParticles(seed: number, aspect: ProceduralAspect): Particle[] {
+  const rng = makeRng(seed ^ 0x9e3779b9);
+  const particles: Particle[] = [];
+  const count = aspect === "9:16" ? 34 : 40;
+
+  for (let i = 0; i < count; i += 1) {
+    const roll = rng();
+    const kind: Particle["kind"] = roll < 0.58 ? "glow" : roll < 0.85 ? "leaf" : "butterfly";
+    const depth = 0.08 + rng() * 0.92;
+    particles.push({
+      kind,
+      depth,
+      x: rng(),
+      y: 0.15 + rng() * 0.8,
+      driftX: (rng() - 0.5) * 0.055,
+      driftY: -0.012 - rng() * 0.03,
+      size:
+        kind === "glow"
+          ? 0.012 + rng() * 0.022
+          : kind === "leaf"
+            ? 0.026 + rng() * 0.024
+            : 0.03 + rng() * 0.024,
+      phase: rng() * Math.PI * 2,
+      spin: (rng() - 0.5) * 1.5,
+      hue: kind === "leaf" ? 78 + rng() * 55 : kind === "butterfly" ? 265 + rng() * 80 : 190 + rng() * 120,
+      alpha:
+        kind === "glow"
+          ? 0.55 + rng() * 0.4
+          : kind === "leaf"
+            ? 0.66 + rng() * 0.3
+            : 0.62 + rng() * 0.3,
+      speed: 0.5 + rng() * 0.9,
+    });
+  }
+  return particles;
+}
+
+// Particles are drawn from pre-rendered sprite canvases instead of building
+// gradients, beziers and CSS blurs on every frame. Per-frame gradient/blur
+// work was expensive enough to starve the encoder and freeze the recording
+// after a few seconds on mobile. Sprites are cached per kind + hue bucket.
+const SPRITE_SIZE = 128;
+const SPRITE_EXTENT = 56;
+const spriteCache = new Map<string, HTMLCanvasElement>();
+
+function paintGlowSprite(ctx: CanvasRenderingContext2D, hue: number) {
+  const r = SPRITE_SIZE / 2;
+  const gradient = ctx.createRadialGradient(r, r, 0, r, r, r);
+  gradient.addColorStop(0, `hsla(${hue} 95% 78% / 0.95)`);
+  gradient.addColorStop(0.45, `hsla(${hue} 95% 68% / 0.33)`);
+  gradient.addColorStop(1, `hsla(${hue} 95% 60% / 0)`);
+  ctx.fillStyle = gradient;
+  ctx.beginPath();
+  ctx.arc(r, r, r, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function paintLeafSprite(ctx: CanvasRenderingContext2D, hue: number) {
+  const size = SPRITE_EXTENT;
+  ctx.save();
+  ctx.translate(SPRITE_SIZE / 2, SPRITE_SIZE / 2);
+  const gradient = ctx.createLinearGradient(-size, -size * 0.4, size, size * 0.4);
+  gradient.addColorStop(0, `hsla(${hue} 46% 34% / 0.92)`);
+  gradient.addColorStop(0.55, `hsla(${hue + 14} 54% 44% / 0.9)`);
+  gradient.addColorStop(1, `hsla(${hue + 26} 58% 52% / 0.82)`);
+  ctx.fillStyle = gradient;
+  ctx.beginPath();
+  ctx.moveTo(-size, 0);
+  ctx.quadraticCurveTo(-size * 0.15, -size * 0.52, size, 0);
+  ctx.quadraticCurveTo(-size * 0.15, size * 0.52, -size, 0);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = `hsla(${hue} 38% 22% / 0.4)`;
+  ctx.lineWidth = Math.max(0.5, size * 0.045);
+  ctx.beginPath();
+  ctx.moveTo(-size * 0.92, 0);
+  ctx.lineTo(size * 0.92, 0);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function paintButterflySprite(ctx: CanvasRenderingContext2D, hue: number) {
+  const wingW = SPRITE_EXTENT;
+  const wingH = SPRITE_EXTENT * 0.62;
+  ctx.save();
+  ctx.translate(SPRITE_SIZE / 2, SPRITE_SIZE / 2);
+  const wingFill = ctx.createLinearGradient(-wingW, -wingH, wingW, wingH);
+  wingFill.addColorStop(0, `hsla(${hue} 62% 62% / 0.85)`);
+  wingFill.addColorStop(0.5, `hsla(${hue + 26} 68% 70% / 0.8)`);
+  wingFill.addColorStop(1, `hsla(${hue} 58% 58% / 0.85)`);
+  ctx.fillStyle = wingFill;
+
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.bezierCurveTo(
+      side * wingW * 0.55, -wingH * 1.05,
+      side * wingW * 1.05, -wingH * 0.6,
+      side * wingW * 0.72, -wingH * 0.05,
+    );
+    ctx.bezierCurveTo(
+      side * wingW * 0.6, wingH * 0.16,
+      side * wingW * 0.2, wingH * 0.1,
+      0, 0,
+    );
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.bezierCurveTo(
+      side * wingW * 0.5, wingH * 0.12,
+      side * wingW * 0.68, wingH * 0.55,
+      side * wingW * 0.34, wingH * 0.6,
+    );
+    ctx.bezierCurveTo(
+      side * wingW * 0.16, wingH * 0.5,
+      side * wingW * 0.05, wingH * 0.25,
+      0, 0,
+    );
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  ctx.strokeStyle = `hsla(${hue} 30% 20% / 0.35)`;
+  ctx.lineWidth = Math.max(0.4, wingW * 0.035);
+  ctx.beginPath();
+  ctx.moveTo(0, -wingH * 0.42);
+  ctx.lineTo(0, wingH * 0.5);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function getParticleSprite(
+  kind: Particle["kind"],
+  hue: number,
+  blurred: boolean,
+): HTMLCanvasElement | null {
+  const bucket = Math.round(hue / 12) * 12;
+  const key = `${kind}:${bucket}:${blurred ? "b" : "s"}`;
+  const cached = spriteCache.get(key);
+  if (cached) return cached;
+
+  const base = document.createElement("canvas");
+  base.width = SPRITE_SIZE;
+  base.height = SPRITE_SIZE;
+  const baseCtx = base.getContext("2d");
+  if (!baseCtx) return null;
+
+  if (kind === "glow") paintGlowSprite(baseCtx, bucket);
+  else if (kind === "leaf") paintLeafSprite(baseCtx, bucket);
+  else paintButterflySprite(baseCtx, bucket);
+
+  let sprite = base;
+  if (blurred) {
+    const soft = document.createElement("canvas");
+    soft.width = SPRITE_SIZE;
+    soft.height = SPRITE_SIZE;
+    const softCtx = soft.getContext("2d");
+    if (softCtx) {
+      try {
+        softCtx.filter = "blur(3px)";
+      } catch {
+        // filter unsupported — fall back to the sharp sprite
+      }
+      softCtx.drawImage(base, 0, 0);
+      softCtx.filter = "none";
+      sprite = soft;
+    }
+  }
+
+  spriteCache.set(key, sprite);
+  return sprite;
+}
+
+function drawParticles(
+  ctx: CanvasRenderingContext2D,
+  particles: Particle[],
+  elapsed: number,
+  width: number,
+  height: number,
+  camX: number,
+  camY: number,
+  subject: { cx: number; cy: number; rx: number; ry: number },
+) {
+  const sorted = [...particles].sort((a, b) => a.depth - b.depth);
+  for (const particle of sorted) {
+    const parallax = 0.25 + particle.depth * 1.5;
+    const wanderX = Math.sin(elapsed * 0.55 * particle.speed + particle.phase) * 0.014;
+    const wanderY = Math.cos(elapsed * 0.42 * particle.speed + particle.phase * 1.4) * 0.01;
+    const nx =
+      ((particle.x + particle.driftX * elapsed + wanderX) % 1.2 + 1.2) % 1.2 - 0.1;
+    const ny =
+      ((particle.y + particle.driftY * elapsed + wanderY) % 1.2 + 1.2) % 1.2 - 0.1;
+
+    const x = nx * width + camX * parallax;
+    const y = ny * height + camY * parallax;
+    const unit = Math.min(width, height);
+    const size = particle.size * unit * (0.55 + particle.depth * 0.9);
+
+    const twinkle = 0.72 + 0.28 * Math.sin(elapsed * 1.7 * particle.speed + particle.phase);
+
+    // Fade foreground particles that drift across the subject, so nothing
+    // obscures the main subject's face/body. Smooth, so no popping.
+    const inSubject = Math.hypot(
+      (x - subject.cx) / Math.max(1, subject.rx),
+      (y - subject.cy) / Math.max(1, subject.ry),
+    );
+    const avoid = particle.depth > 0.55 ? clamp01((inSubject - 0.85) / 0.5) : 1;
+
+    const alpha = particle.alpha * twinkle * (0.62 + particle.depth * 0.38) * avoid;
+    if (alpha < 0.02) continue;
+
+    const sprite = getParticleSprite(particle.kind, particle.hue, particle.depth > 0.55);
+    if (!sprite) continue;
+
+    let rotation = 0;
+    let squash = 1;
+    let halfExtent = size;
+    if (particle.kind === "glow") {
+      halfExtent = size * 2.6 * (SPRITE_EXTENT / (SPRITE_SIZE / 2));
+    } else if (particle.kind === "leaf") {
+      rotation =
+        particle.spin * elapsed * 0.9 +
+        Math.sin(elapsed * 1.1 * particle.speed + particle.phase) * 0.7;
+    } else {
+      const flap = elapsed * 11 * particle.speed + particle.phase;
+      squash = 0.18 + Math.abs(Math.cos(flap)) * 0.82;
+      rotation =
+        Math.sin(elapsed * 1.3 * particle.speed + particle.phase) * 0.5 + particle.spin * 0.2;
+      halfExtent = size * 0.95;
+    }
+
+    const scale = halfExtent / SPRITE_EXTENT;
+    const drawW = SPRITE_SIZE * scale * squash;
+    const drawH = SPRITE_SIZE * scale;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(x, y);
+    if (rotation) ctx.rotate(rotation);
+    ctx.drawImage(sprite, -drawW / 2, -drawH / 2, drawW, drawH);
+    ctx.restore();
+  }
+}
+
+function drawImageLayer(
+  ctx: CanvasRenderingContext2D,
+  image: SceneSource,
+  width: number,
+  height: number,
+  zoom: number,
+  panX: number,
+  panY: number,
+) {
+  const scale = Math.max(width / image.width, height / image.height) * zoom;
+  const drawW = image.width * scale;
+  const drawH = image.height * scale;
+  const dx = (width - drawW) / 2 + panX;
+  const dy = (height - drawH) / 2 + panY;
+  ctx.drawImage(image, dx, dy, drawW, drawH);
+  return { dx, dy, drawW, drawH };
+}
+
 async function loadSceneBitmap(blob: Blob): Promise<SceneSource | null> {
   try {
     if (typeof createImageBitmap === "function") {
@@ -289,39 +663,81 @@ function drawImageScene(
   duration: number,
   image: SceneSource,
   seed: number,
+  analysis: SceneAnalysis,
+  particles: Particle[],
 ) {
-  const t = Math.min(1, elapsed / Math.max(0.001, duration));
-  const eased = t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2;
+  const t = clamp01(elapsed / Math.max(0.001, duration));
+  const smooth = t * t * (3 - 2 * t);
+  const breathe = Math.sin(elapsed * 1.05) * 0.5 + 0.5;
 
   ctx.fillStyle = "#05030c";
   ctx.fillRect(0, 0, width, height);
 
-  const zoom = 1.06 + eased * 0.16;
-  const dirX = seed % 2 === 0 ? 1 : -1;
-  const dirY = seed % 3 === 0 ? -1 : 1;
-  const panX = (eased - 0.5) * width * 0.07 * dirX;
-  const panY = (eased - 0.5) * height * 0.06 * dirY;
-
-  const scale = Math.max(width / image.width, height / image.height) * zoom;
-  const drawW = image.width * scale;
-  const drawH = image.height * scale;
-  const dx = (width - drawW) / 2 + panX;
-  const dy = (height - drawH) / 2 + panY;
+  // Smooth dolly + drifting handheld-style camera (no abrupt start/stop).
+  const zoom = 1.035 + smooth * 0.115 + breathe * 0.004;
+  const driftX = Math.sin(elapsed * 0.62) * width * 0.017;
+  const driftY = Math.cos(elapsed * 0.47) * height * 0.013;
+  const camX = (smooth - 0.5) * width * 0.05 + driftX;
+  const camY = (smooth - 0.5) * height * 0.038 + driftY;
 
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(image, dx, dy, drawW, drawH);
+
+  // Far plane: background moves less than the camera (parallax).
+  const bg = drawImageLayer(ctx, image, width, height, zoom, camX * 0.62, camY * 0.62);
+
+  // Mid plane: a feathered ellipse around the most salient region drifts a
+  // little more than the background, creating depth separation.
+  const subjectZoom = zoom * 1.014;
+  const subjectPanX = camX * 1.24 + Math.sin(elapsed * 1.45) * width * 0.0022;
+  const subjectPanY = camY * 1.24 + Math.cos(elapsed * 1.2) * height * 0.0018;
+  const subjectScale = Math.max(width / image.width, height / image.height) * subjectZoom;
+  const subjectW = image.width * subjectScale;
+  const subjectH = image.height * subjectScale;
+  const subjectDx = (width - subjectW) / 2 + subjectPanX;
+  const subjectDy = (height - subjectH) / 2 + subjectPanY;
+
+  const centreX = bg.dx + analysis.cx * bg.drawW;
+  const centreY = bg.dy + analysis.cy * bg.drawH;
+  const radiusX = analysis.rx * bg.drawW;
+  const radiusY = analysis.ry * bg.drawH;
 
   ctx.save();
+  const feather = [
+    { grow: 1.26, alpha: 0.14 },
+    { grow: 1.13, alpha: 0.3 },
+    { grow: 1.0, alpha: 1 },
+  ];
+  for (const layer of feather) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.ellipse(centreX, centreY, radiusX * layer.grow, radiusY * layer.grow, 0, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.globalAlpha = layer.alpha;
+    ctx.drawImage(image, subjectDx, subjectDy, subjectW, subjectH);
+    ctx.restore();
+  }
+  ctx.restore();
+
+  // Light sweep, softened.
+  ctx.save();
   ctx.globalCompositeOperation = "overlay";
-  const sweepX = ((elapsed / Math.max(1, duration)) * 1.6 - 0.3) * width;
-  const light = ctx.createLinearGradient(sweepX - width * 0.4, 0, sweepX + width * 0.4, height);
+  const sweepX = (t * 1.6 - 0.3) * width;
+  const light = ctx.createLinearGradient(sweepX - width * 0.45, 0, sweepX + width * 0.45, height);
   light.addColorStop(0, "rgba(255,255,255,0)");
-  light.addColorStop(0.5, "rgba(255,255,255,0.14)");
+  light.addColorStop(0.5, "rgba(255,255,255,0.1)");
   light.addColorStop(1, "rgba(255,255,255,0)");
   ctx.fillStyle = light;
   ctx.fillRect(0, 0, width, height);
   ctx.restore();
+
+  // Foreground particles: butterflies, leaves and glowing motes.
+  drawParticles(ctx, particles, elapsed, width, height, camX, camY, {
+    cx: centreX,
+    cy: centreY,
+    rx: radiusX * 1.05,
+    ry: radiusY * 1.05,
+  });
 
   const vignette = ctx.createRadialGradient(
     width / 2,
@@ -370,10 +786,22 @@ export async function renderProceduralVideo(
 
   const seed = hashString(`${input.prompt}|${input.style}|${aspect}`);
   const sceneImage = input.image ? await loadSceneBitmap(input.image) : null;
+  const analysis = sceneImage ? analyzeScene(sceneImage) : null;
+  const particles = sceneImage ? createParticles(seed, aspect) : [];
 
   const drawFrame = (elapsed: number) => {
-    if (sceneImage) {
-      drawImageScene(ctx, width, height, elapsed, duration, sceneImage, seed);
+    if (sceneImage && analysis) {
+      drawImageScene(
+        ctx,
+        width,
+        height,
+        elapsed,
+        duration,
+        sceneImage,
+        seed,
+        analysis,
+        particles,
+      );
     } else {
       drawScene(ctx, width, height, elapsed, duration, seed);
     }

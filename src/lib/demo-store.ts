@@ -83,6 +83,7 @@ export function createDemoVideo(input: {
   title?: string;
   gradient: string;
   source?: DemoVideo["source"];
+  motion?: DemoVideo["motion"];
   sizeLabel?: string;
 }): DemoVideo {
   const title =
@@ -110,6 +111,7 @@ export function createDemoVideo(input: {
     resolution,
     sizeLabel: input.sizeLabel ?? `${(input.duration * 1.35 + 2.4).toFixed(1)} MB`,
     source: input.source ?? "demo",
+    motion: input.motion,
   };
   return addVideo(video);
 }

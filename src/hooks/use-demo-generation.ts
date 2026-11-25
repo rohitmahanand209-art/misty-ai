@@ -156,6 +156,7 @@ export function useDemoGeneration(provider: GenerationProvider = "demo") {
             input.prompt + input.mode + Date.now().toString(),
           ),
           source: "procedural",
+          motion: "simulated",
           sizeLabel: formatBytes(blob.size),
         });
         registerVideoBlob(video.id, blob);

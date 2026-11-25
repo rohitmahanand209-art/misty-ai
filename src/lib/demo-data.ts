@@ -28,6 +28,7 @@ export type DemoVideo = {
   resolution: string;
   sizeLabel: string;
   source?: "demo" | "procedural";
+  motion?: "simulated";
 };
 
 export const VIDEO_SECONDS = 10;

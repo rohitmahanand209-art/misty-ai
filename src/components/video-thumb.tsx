@@ -85,7 +85,7 @@ export function VideoThumb({
         {video?.source === "procedural"
           ? videoUrl
             ? hasScene
-              ? "AI scene · local render"
+              ? "AI still · simulated motion"
               : "Abstract render"
             : "Render expired"
           : "Demo preview"}

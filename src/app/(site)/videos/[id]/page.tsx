@@ -153,10 +153,19 @@ export default function VideoDetailPage() {
             />
             <div className="pointer-events-none absolute left-5 top-5 rounded-full border border-white/15 bg-black/40 px-2.5 py-1 text-[10px] font-medium uppercase tracking-wider text-white/80 backdrop-blur">
               {video.source === "procedural"
-                ? "AI scene render"
+                ? "AI still · simulated motion"
                 : "Simulated preview"}
             </div>
           </div>
+          {video.source === "procedural" && video.motion === "simulated" && (
+            <p className="mt-2 rounded-xl border border-amber-400/20 bg-amber-400/[0.06] px-3 py-2 text-[11px] leading-relaxed text-amber-100/75">
+              <span className="font-medium text-amber-200">Simulated motion:</span>{" "}
+              the scene image is real and AI-generated, but the movement is
+              created by Misty AI in your browser (camera dolly, parallax,
+              drifting particles). No AI video model animated the subject, so
+              it does not perform actions from the prompt.
+            </p>
+          )}
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] text-white/55">
               {MODE_LABELS[video.mode]}
